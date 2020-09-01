@@ -27,7 +27,7 @@ func TestBogusYaml(t *testing.T) {
 	//
 	// Ensure the error is what we expect.
 	//
-	reg, _ := regexp.Compile("Failed to parse YAML")
+	reg, _ := regexp.Compile("failed to parse YAML")
 	if !reg.MatchString(err.Error()) {
 		t.Errorf("Got wrong error: %v", err)
 	}
@@ -38,8 +38,8 @@ func TestBogusYaml(t *testing.T) {
 //
 func TestYamlDates(t *testing.T) {
 
-	tests := []string{"---\ntime: '2017-03-10T10:22:33.659245699+00:00'\nhost: bart\n",
-		"---\ntime: 2017-03-10 10:22:33.493526494 +00:00\nhost: foo\n"}
+	tests := []string{"---\ntime: '2017-03-10T10:22:33.659245699+00:00'\nhost: bart\nenvironment: production\n",
+		"---\ntime: 2017-03-10 10:22:33.493526494 +00:00\nhost: foo\nenvironment: production\n"}
 
 	for _, input := range tests {
 
@@ -95,9 +95,7 @@ func TestHostName(t *testing.T) {
 		//
 		// Build up YAML
 		//
-		var tmp string
-
-		tmp = "---\n" +
+		tmp := "---\n" +
 			"host: " + input.hostname
 
 		//
@@ -162,10 +160,9 @@ func TestNodeStatus(t *testing.T) {
 		//
 		// Build up YAML
 		//
-		var tmp string
-
-		tmp = "---\n" +
+		tmp := "---\n" +
 			"host: foo.example.com\n" +
+			"environment: production\n" +
 			"time: '2017-08-07T16:37:42.659245699+00:00'\n" +
 			"status: " + input.state
 

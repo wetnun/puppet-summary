@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"time"
@@ -28,12 +29,13 @@ var db *sql.DB
 // runs on the front-page.
 //
 type PuppetRuns struct {
-	Fqdn    string
-	State   string
-	At      string
-	Epoch   string
-	Ago     string
-	Runtime string
+	Fqdn        string
+	Environment string
+	State       string
+	At          string
+	Epoch       string
+	Ago         string
+	Runtime     string
 }
 
 //
@@ -41,16 +43,17 @@ type PuppetRuns struct {
 // of puppet-runs against a particular node.
 //
 type PuppetReportSummary struct {
-	ID       string
-	Fqdn     string
-	State    string
-	At       string
-	Ago      string
-	Runtime  string
-	Failed   int
-	Changed  int
-	Total    int
-	YamlFile string
+	ID          string
+	Fqdn        string
+	Environment string
+	State       string
+	At          string
+	Ago         string
+	Runtime     string
+	Failed      int
+	Changed     int
+	Total       int
+	YamlFile    string
 }
 
 //
@@ -106,6 +109,7 @@ func SetupDB(path string) error {
         CREATE TABLE IF NOT EXISTS reports (
           id          INTEGER PRIMARY KEY AUTOINCREMENT,
           fqdn        text,
+	  environment text,
           state       text,
           yaml_file   text,
           runtime     integer,
@@ -127,7 +131,70 @@ func SetupDB(path string) error {
 		return err
 	}
 
+	//
+	// Check if the table has environment column
+	//
+	var name string
+	row := db.QueryRow("SELECT name FROM pragma_table_info('reports') WHERE name='environment'")
+	err = row.Scan(&name)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			fmt.Println("Did not find environment column, adding")
+			_, err = db.Exec("ALTER TABLE reports ADD environment text")
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
 	return nil
+}
+
+//
+// Populate environment column after adding it
+//
+func populateEnvironment(prefix string) error {
+
+	//
+	// Ensure we have a DB-handle
+	//
+	if db == nil {
+		return errors.New("SetupDB not called")
+	}
+
+	var ids map[int]string = make(map[int]string)
+	rows, err := db.Query("SELECT id,yaml_file FROM reports WHERE environment IS NULL")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var yamlfile string
+		err = rows.Scan(&id, &yamlfile)
+		if err != nil {
+			return err
+		}
+		ids[id] = yamlfile
+	}
+
+	for id, yamlfile := range ids {
+		if len(yamlfile) > 0 {
+			var content []byte
+			path := filepath.Join(prefix, yamlfile)
+			content, err = ioutil.ReadFile(path)
+			if err == nil {
+				var report PuppetReport
+				report, err = ParsePuppetReport(content)
+				if err == nil {
+					fmt.Println("Updating id:", id, "with environment:", report.Environment)
+					_, _ = db.Exec("UPDATE reports SET environment = ? WHERE id = ?", report.Environment, id)
+				}
+			}
+		}
+	}
+	return err
 }
 
 //
@@ -151,13 +218,14 @@ func addDB(data PuppetReport, path string) error {
 	if err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare("INSERT INTO reports(fqdn,state,yaml_file,executed_at,runtime, failed, changed, total, skipped) values(?,?,?,?,?,?,?,?,?)")
+	stmt, err := tx.Prepare("INSERT INTO reports(fqdn,environment,state,yaml_file,executed_at,runtime, failed, changed, total, skipped) values(?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	stmt.Exec(data.Fqdn,
+		data.Environment,
 		data.State,
 		path,
 		time.Now().Unix(),
@@ -208,6 +276,35 @@ func countUnchangedAndReapedReports() (int, error) {
 }
 
 //
+// Get a list of all environments
+//
+func getEnvironments() ([]string, error) {
+	//
+	// Ensure we have a DB-handle
+	//
+	if db == nil {
+		return nil, errors.New("SetupDB not called")
+	}
+
+	var environments []string
+	rows, err := db.Query("SELECT DISTINCT environment FROM reports ORDER BY environment")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var env string
+		err := rows.Scan(&env)
+		if err != nil {
+			return nil, err
+		}
+		environments = append(environments, env)
+	}
+	return environments, nil
+}
+
+//
 // Return the contents of the YAML file which was associated
 // with the given report-ID.
 //
@@ -244,7 +341,7 @@ func getYAML(prefix string, id string) ([]byte, error) {
 		content, err := ioutil.ReadFile(path)
 		return content, err
 	}
-	return nil, errors.New("Failed to find report with specified ID")
+	return nil, errors.New("failed to find report with specified ID")
 }
 
 //
@@ -254,7 +351,7 @@ func getYAML(prefix string, id string) ([]byte, error) {
 //  * The status.
 //  * The last-seen time.
 //
-func getIndexNodes() ([]PuppetRuns, error) {
+func getIndexNodes(environment string) ([]PuppetRuns, error) {
 
 	//
 	// Our return-result.
@@ -279,9 +376,21 @@ func getIndexNodes() ([]PuppetRuns, error) {
 	}
 
 	//
+	// Shared query piece
+	//
+	queryStart := "SELECT fqdn, state, runtime, max(executed_at) FROM reports WHERE "
+
+	//
+	// If environment is specified add a filter
+	//
+	if len(environment) > 0 {
+		queryStart += " environment = '" + environment + "' AND "
+	}
+
+	//
 	// Select the status - for nodes seen in the past 24 hours.
 	//
-	rows, err := db.Query("SELECT fqdn, state, runtime, max(executed_at) FROM reports WHERE  ( ( strftime('%s','now') - executed_at ) < ? ) GROUP by fqdn;", threshold)
+	rows, err := db.Query(queryStart+" ( ( strftime('%s','now') - executed_at ) < ? ) GROUP by fqdn;", threshold)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +448,7 @@ func getIndexNodes() ([]PuppetRuns, error) {
 	//
 	// Now look for orphaned nodes.
 	//
-	rows2, err2 := db.Query("SELECT fqdn, state, runtime, max(executed_at) FROM reports WHERE ( ( strftime('%s','now') - executed_at ) > ? ) GROUP by fqdn;", threshold)
+	rows2, err2 := db.Query(queryStart+" ( ( strftime('%s','now') - executed_at ) > ? ) GROUP by fqdn;", threshold)
 	if err2 != nil {
 		return nil, err
 	}
@@ -396,12 +505,12 @@ func getIndexNodes() ([]PuppetRuns, error) {
 //
 // Return the state of our nodes.
 //
-func getStates() ([]PuppetState, error) {
+func getStates(environment string) ([]PuppetState, error) {
 
 	//
 	// Get the nodes.
 	//
-	NodeList, err := getIndexNodes()
+	NodeList, err := getIndexNodes(environment)
 	if err != nil {
 		return nil, err
 	}
@@ -459,8 +568,7 @@ func getStates() ([]PuppetState, error) {
 
 		// Percentage has to be capped :)
 		if total != 0 {
-			var c float64
-			c = float64(states[name])
+			c := float64(states[name])
 			tmp.Percentage = (c / float64(total)) * 100
 		}
 		data = append(data, tmp)
@@ -484,7 +592,7 @@ func getReports(fqdn string) ([]PuppetReportSummary, error) {
 	//
 	// Select the status.
 	//
-	stmt, err := db.Prepare("SELECT id, fqdn, state, executed_at, runtime, failed, changed, total, yaml_file FROM reports WHERE fqdn=? ORDER by executed_at DESC LIMIT 50")
+	stmt, err := db.Prepare("SELECT id, fqdn, environment, state, executed_at, runtime, failed, changed, total, yaml_file FROM reports WHERE fqdn=? ORDER by executed_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +616,7 @@ func getReports(fqdn string) ([]PuppetReportSummary, error) {
 	for rows.Next() {
 		var tmp PuppetReportSummary
 		var at string
-		err = rows.Scan(&tmp.ID, &tmp.Fqdn, &tmp.State, &at, &tmp.Runtime, &tmp.Failed, &tmp.Changed, &tmp.Total, &tmp.YamlFile)
+		err = rows.Scan(&tmp.ID, &tmp.Fqdn, &tmp.Environment, &tmp.State, &at, &tmp.Runtime, &tmp.Failed, &tmp.Changed, &tmp.Total, &tmp.YamlFile)
 		if err != nil {
 			return nil, err
 		}
@@ -544,7 +652,7 @@ func getReports(fqdn string) ([]PuppetReportSummary, error) {
 //
 // Get data for our stacked bar-graph
 //
-func getHistory() ([]PuppetHistory, error) {
+func getHistory(environment string) ([]PuppetHistory, error) {
 
 	//
 	// Ensure we have a DB-handle
@@ -563,10 +671,14 @@ func getHistory() ([]PuppetHistory, error) {
 	//
 	var dates []string
 
+	sel := "SELECT DISTINCT(strftime('%d/%m/%Y', DATE(executed_at, 'unixepoch'))) FROM reports"
+	if len(environment) > 0 {
+		sel = sel + " WHERE environment = '" + environment + "'"
+	}
 	//
 	// Get all the distinct dates we have data for.
 	//
-	stmt, err := db.Prepare("SELECT DISTINCT(strftime('%d/%m/%Y', DATE(executed_at, 'unixepoch'))) FROM reports")
+	stmt, err := db.Prepare(sel)
 	if err != nil {
 		return nil, err
 	}
@@ -585,7 +697,7 @@ func getHistory() ([]PuppetHistory, error) {
 		var d string
 		err = rows.Scan(&d)
 		if err != nil {
-			return nil, errors.New("Failed to scan SQL")
+			return nil, errors.New("failed to scan SQL")
 		}
 
 		dates = append(dates, d)
@@ -609,7 +721,12 @@ func getHistory() ([]PuppetHistory, error) {
 		x.Failed = "0"
 		x.Date = known
 
-		stmt, err = db.Prepare("SELECT distinct state, COUNT(state) AS CountOf FROM reports WHERE strftime('%d/%m/%Y', DATE(executed_at, 'unixepoch'))=? GROUP by state")
+		query := "SELECT distinct state, COUNT(state) AS CountOf FROM reports WHERE strftime('%d/%m/%Y', DATE(executed_at, 'unixepoch'))=? "
+		if len(environment) > 0 {
+			query += " AND environment = '" + environment + "' "
+		}
+		query += " GROUP by state"
+		stmt, err = db.Prepare(query)
 		if err != nil {
 			return nil, err
 		}
@@ -630,7 +747,7 @@ func getHistory() ([]PuppetHistory, error) {
 
 			err = rows.Scan(&name, &count)
 			if err != nil {
-				return nil, errors.New("Failed to scan SQL")
+				return nil, errors.New("failed to scan SQL")
 			}
 			if name == "changed" {
 				x.Changed = count
@@ -659,19 +776,111 @@ func getHistory() ([]PuppetHistory, error) {
 }
 
 //
-// Prune old reports
+// Prune dangling reports
 //
-// We have to find the old reports, individually, so we can unlink the
-// copy of the on-disk YAML, but once we've done that we can delete them
-// as a group.
+// Walk the reports directory and remove all files that are not referenced
+// in the database.
 //
-func pruneReports(prefix string, days int, verbose bool) error {
+func pruneDangling(prefix string, noop bool, verbose bool) error {
 
 	//
 	// Ensure we have a DB-handle
 	//
 	if db == nil {
 		return errors.New("SetupDB not called")
+	}
+
+	//
+	// Find all yaml files
+	//
+	find, err := db.Query("SELECT yaml_file FROM reports")
+	if err != nil {
+		return err
+	}
+
+	//
+	// Copy them for easy access
+	//
+	reports := make(map[string]int)
+	for find.Next() {
+		var fname string
+		find.Scan(&fname)
+		reports[fname] = 1
+	}
+
+	//
+	// We have to be real careful so we will match filenames to this regexp
+	//
+	r, _ := regexp.Compile("^[0-9a-f]{40}$")
+
+	//
+	// Walk reports directory
+	//
+	err = filepath.Walk(prefix, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Printf("Error accessing path %q: %v\n", path, err)
+			return err
+		}
+		if !info.IsDir() {
+			rel, lerr := filepath.Rel(prefix, path)
+			if r.MatchString(info.Name()) && lerr == nil {
+				_, found := reports[rel]
+				if found {
+					// can be used to find db entries with no file reports
+					reports[rel] = 2
+				} else {
+					if noop {
+						fmt.Printf("Would remove file %q\n", path)
+					} else {
+						if verbose {
+							fmt.Printf("Removing file %q\n", path)
+						}
+						os.Remove(path)
+					}
+				}
+			} else {
+				fmt.Printf("Warning - unexpected file or error parsing: %q\n", path)
+			}
+		}
+		return nil
+	})
+
+	//
+	// Check for database entries with missing yaml file reports
+	//
+	if verbose {
+		for k, v := range reports {
+			if v != 2 {
+				fmt.Printf("Missing file: %q\n", k)
+			}
+		}
+	}
+
+	return err
+}
+
+//
+// Prune old reports
+//
+// We have to find the old reports, individually, so we can unlink the
+// copy of the on-disk YAML, but once we've done that we can delete them
+// as a group.
+//
+func pruneReports(environment string, prefix string, days int, verbose bool) error {
+
+	//
+	// Ensure we have a DB-handle
+	//
+	if db == nil {
+		return errors.New("SetupDB not called")
+	}
+
+	//
+	// Select appropriate environment, if specified
+	//
+	envCondition := ""
+	if len(environment) > 0 {
+		envCondition = " AND environment = '" + environment + "'"
 	}
 
 	//
@@ -682,7 +891,7 @@ func pruneReports(prefix string, days int, verbose bool) error {
 	//
 	// Find things that are old.
 	//
-	find, err := db.Prepare("SELECT id,yaml_file FROM reports WHERE ( ( strftime('%s','now') - executed_at ) > ? )")
+	find, err := db.Prepare("SELECT id,yaml_file FROM reports WHERE ( ( strftime('%s','now') - executed_at ) > ? )" + envCondition)
 	if err != nil {
 		return err
 	}
@@ -690,7 +899,7 @@ func pruneReports(prefix string, days int, verbose bool) error {
 	//
 	// Remove old reports, en mass.
 	//
-	clean, err := db.Prepare("DELETE FROM reports WHERE ( ( strftime('%s','now') - executed_at ) > ? )")
+	clean, err := db.Prepare("DELETE FROM reports WHERE ( ( strftime('%s','now') - executed_at ) > ? )" + envCondition)
 	if err != nil {
 		return err
 	}
@@ -760,7 +969,7 @@ func pruneReports(prefix string, days int, verbose bool) error {
 // copy of the on-disk YAML, but once we've done that we can delete them
 // as a group.
 //
-func pruneUnchanged(prefix string, verbose bool) error {
+func pruneUnchanged(environment string, prefix string, verbose bool) error {
 
 	//
 	// Ensure we have a DB-handle
@@ -770,9 +979,17 @@ func pruneUnchanged(prefix string, verbose bool) error {
 	}
 
 	//
+	// Select appropriate environment, if specified
+	//
+	envCondition := ""
+	if len(environment) > 0 {
+		envCondition = " AND environment = '" + environment + "'"
+	}
+
+	//
 	// Find unchanged reports.
 	//
-	find, err := db.Prepare("SELECT id,yaml_file FROM reports WHERE state='unchanged'")
+	find, err := db.Prepare("SELECT id,yaml_file FROM reports WHERE state='unchanged'" + envCondition)
 	if err != nil {
 		return err
 	}
@@ -780,7 +997,7 @@ func pruneUnchanged(prefix string, verbose bool) error {
 	//
 	// Prepare to update them all.
 	//
-	clean, err := db.Prepare("UPDATE reports SET yaml_file='pruned' WHERE state='unchanged'")
+	clean, err := db.Prepare("UPDATE reports SET yaml_file='pruned' WHERE state='unchanged'" + envCondition)
 	if err != nil {
 		return err
 	}
@@ -843,9 +1060,9 @@ func pruneUnchanged(prefix string, verbose bool) error {
 	return nil
 }
 
-func pruneOrphaned(prefix string, verbose bool) error {
+func pruneOrphaned(environment string, prefix string, verbose bool) error {
 
-	NodeList, err := getIndexNodes()
+	NodeList, err := getIndexNodes(environment)
 	if err != nil {
 		return err
 	}

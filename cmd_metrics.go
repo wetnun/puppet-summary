@@ -11,7 +11,7 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
-	"github.com/marpaia/graphite-golang"
+	graphite "github.com/marpaia/graphite-golang"
 )
 
 //
@@ -23,7 +23,7 @@ func getMetrics() map[string]string {
 	metrics := make(map[string]string)
 
 	// Get the node-states.
-	data, err := getStates()
+	data, err := getStates("")
 	if err != nil {
 		fmt.Printf("Error getting node states: %s\n", err.Error())
 		os.Exit(1)
@@ -61,7 +61,7 @@ func SendMetrics(host string, port int, prefix string, nop bool) {
 	// If there was an error in the helper we're OK,
 	// providing we are running in `-nop`-mode.
 	//
-	if (err != nil) && (nop == false) {
+	if (err != nil) && (!nop) {
 		fmt.Printf("Error creating metrics-helper: %s\n", err.Error())
 		return
 	}

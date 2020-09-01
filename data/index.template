@@ -5,11 +5,11 @@
     <meta charset="utf-8">
     <link href="{{.Urlprefix }}/favicon.ico" rel="shortcut icon" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://code.jquery.com/jquery-1.12.4.min.js" integrity="sha384-nvAa0+6Qg9clwYCGGPpDQLVpLNn0fRaROjHqs13t4Ggj3Ez50XnGQqc/r8MhnRDZ" crossorigin="anonymous"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.6.0/Chart.bundle.min.js"></script>
-    <script src="{{.Urlprefix }}/jquery.tablesorter.min.js"></script>
+    <link href="{{.Urlprefix }}/css/bootstrap.min.css" rel="stylesheet">
+    <script src="{{.Urlprefix }}/js/jquery-1.12.4.min.js"></script>
+    <script src="{{.Urlprefix }}/js/bootstrap.min.js"></script>
+    <script src="{{.Urlprefix }}/js/Chart.bundle.min.js"></script>
+    <script src="{{.Urlprefix }}/js/jquery.tablesorter.min.js"></script>
     <script type="text/javascript">
      window.onload = function () {
        //
@@ -112,6 +112,17 @@
           <div class="pull-left">
             <ul class="nav navbar-nav">
               <li class="breadcrumb-item"><a href="{{.Urlprefix }}/"><b>Puppet-Summary</b></a></li>
+	      <li class="dropdown show">
+                <a class="btn btn-secondary dropdown-toggle" href="#" role="button" id="dropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                Environments
+                </a>
+                <ul class="dropdown-menu" aria-labelledby="dropdownMenuLink">
+		  <li><a class="dropdown-item" href="{{.Urlprefix}}/">All environments</a></li>
+	          {{range .Environments}}
+		  <li><a class="dropdown-item" href="{{$.Urlprefix}}/environment/{{.}}">{{.}}</a></li>
+	          {{end}}
+                </ul>
+	      </li>
             </ul>
           </div>
           <div class="pull-right">
@@ -129,7 +140,7 @@
     </nav>
     <div class="container">
 
-      <h1>Node Summary</h1>
+      <h1>Node Summary{{if ne .Environment "" }} for environment: {{.Environment}}{{ end }}</h1>
       <canvas id="canvas" style="height: 150px; width: 90%; margin-left:5%; margin-right:5%"></canvas>
       <div id="fcanvas" ></div>
       <p>&nbsp;</p>
@@ -150,6 +161,7 @@
             <thead>
             <tr>
               <th>Node</th>
+              <th>Environment</th>
               <th>State</th>
               <th>Seen</th>
             </tr>
@@ -161,6 +173,7 @@
                 {{if eq .State "orphaned" }} class="warning"  {{ end }}
                 data-href="{{$.Urlprefix }}/node/{{.Fqdn}}">
               <td>{{.Fqdn}}</td>
+              <td>{{.Environment}}</td>
               <td>{{.State}}</td>
               <td data-text="{{.Epoch}}" data-sort-value="{{.Epoch}}" title="{{.At}}">{{.Ago}}</td>
             </tr>
@@ -174,6 +187,7 @@
             <thead>
             <tr>
               <th>Node</th>
+              <th>Environment</th>
               <th>State</th>
               <th>Seen</th>
             </tr>
@@ -182,6 +196,7 @@
             {{if eq .State "failed" }}
             <tr class="danger" data-href="{{$.Urlprefix }}/node/{{.Fqdn}}">
               <td>{{.Fqdn}}</td>
+              <td>{{.Environment}}</td>
               <td>{{.State}}</td>
               <td data-text="{{.Epoch}}" data-sort-value="{{.Epoch}}" title="{{.At}}">{{.Ago}}</td>
             </tr>
@@ -196,6 +211,7 @@
             <thead>
             <tr>
               <th>Node</th>
+              <th>Environment</th>
               <th>State</th>
               <th>Seen</th>
             </tr>
@@ -204,6 +220,7 @@
             {{if eq .State "changed" }}
             <tr class="info" data-href="{{$.Urlprefix }}/node/{{.Fqdn}}">
               <td>{{.Fqdn}}</td>
+              <td>{{.Environment}}</td>
               <td>{{.State}}</td>
               <td data-text="{{.Epoch}}" data-sort-value="{{.Epoch}}" title="{{.At}}">{{.Ago}}</td>
             </tr>
@@ -218,6 +235,7 @@
             <thead>
             <tr>
               <th>Node</th>
+              <th>Environment</th>
               <th>State</th>
               <th>Seen</th>
             </tr>
@@ -226,6 +244,7 @@
             {{if eq .State "unchanged" }}
             <tr data-href="{{$.Urlprefix }}/node/{{.Fqdn}}">
               <td>{{.Fqdn}}</td>
+              <td>{{.Environment}}</td>
               <td>{{.State}}</td>
               <td data-text="{{.Epoch}}" data-sort-value="{{.Epoch}}" title="{{.At}}">{{.Ago}}</td>
             </tr>
@@ -240,6 +259,7 @@
             <thead>
             <tr>
               <th>Node</th>
+              <th>Environment</th>
               <th>State</th>
               <th>Seen</th>
             </tr>
@@ -248,6 +268,7 @@
             {{if eq .State "orphaned" }}
             <tr class="warning" data-href="{{$.Urlprefix }}/node/{{.Fqdn}}">
               <td>{{.Fqdn}}</td>
+              <td>{{.Environment}}</td>
               <td>{{.State}}</td>
               <td data-text="{{.Epoch}}" data-sort-value="{{.Epoch}}" title="{{.At}}">{{.Ago}}</td>
             </tr>
@@ -277,7 +298,7 @@
         </div>
         <div class="col-md-4">
           <ul class="nav">
-            <li><a href="https://steve.kemp.fi/">© 2017-2018 - Steve Kemp</a></li>
+            <li><a href="https://steve.kemp.fi/">© 2017-2019 - Steve Kemp</a></li>
           </ul>
         </div>
       </div>

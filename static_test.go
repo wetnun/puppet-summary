@@ -6,6 +6,8 @@ package main
 
 import (
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -14,9 +16,38 @@ import (
 // Test that we have one embedded resource.
 //
 func TestResourceCount(t *testing.T) {
+
+	expected := 0
+
+	// We're going to compare what is embedded with
+	// what is on-disk.
+	//
+	// We could just hard-wire the count, but that
+	// would require updating the count every time
+	// we add/remove a new resource
+	err := filepath.Walk("data",
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() {
+				expected++
+			}
+			return nil
+		})
+	if err != nil {
+		t.Errorf("failed to find resources beneath data/ %s", err.Error())
+	}
+
+	// ARBITRARY!
+	if expected < 10 {
+		t.Fatalf("we expected more than 10 files beneath data/")
+	}
+
 	out := getResources()
-	if len(out) != 8 {
-		t.Errorf("We expected seven resources but found %d.", len(out))
+
+	if len(out) != expected {
+		t.Errorf("We expected %d resources but found %d.", expected, len(out))
 	}
 }
 
@@ -57,17 +88,6 @@ func TestResourceMatches(t *testing.T) {
 		}
 
 		//
-		// Now test the length is the same as generated in the file.
-		//
-		for i, o := range all {
-			if o.Filename == entry.Filename {
-				if len(master) != getResources()[i].Length {
-					t.Errorf("Data length didn't match the generated size")
-				}
-			}
-		}
-
-		//
 		// Test the data-matches
 		//
 		if string(master) != string(data) {
@@ -91,7 +111,7 @@ func TestMissingResource(t *testing.T) {
 	if err == nil {
 		t.Errorf("We expected an error loading a missing resource, but got none.")
 	}
-	if !strings.Contains(err.Error(), "Failed to find resource") {
+	if !strings.Contains(err.Error(), "failed to find resource") {
 		t.Errorf("Error message differed from expectations.")
 	}
 }

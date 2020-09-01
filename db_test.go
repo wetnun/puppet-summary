@@ -46,7 +46,7 @@ func addFakeReports() {
 
 	//
 	// Add some records
-	stmt, err := tx.Prepare("INSERT INTO reports(fqdn,yaml_file,executed_at) values(?,?,?)")
+	stmt, err := tx.Prepare("INSERT INTO reports(fqdn,environment,yaml_file,executed_at) values(?,?,?,?)")
 	if err != nil {
 		panic(err)
 	}
@@ -57,10 +57,14 @@ func addFakeReports() {
 	for count < 30 {
 		now := time.Now().Unix()
 		days := int64(60 * 60 * 24 * count)
+		env := "production"
+		if count > 2 {
+			env = "test"
+		}
 
 		fqdn := fmt.Sprintf("node%d.example.com", count)
 		now -= days
-		stmt.Exec(fqdn, "/../data/valid.yaml", now)
+		stmt.Exec(fqdn, env, "/../data/valid.yaml", now)
 		count++
 	}
 	tx.Commit()
@@ -169,7 +173,7 @@ func TestMissingInit(t *testing.T) {
 		t.Errorf("Got wrong error: %v", err)
 	}
 
-	_, err = getIndexNodes()
+	_, err = getIndexNodes("")
 	if !reg.MatchString(err.Error()) {
 		t.Errorf("Got wrong error: %v", err)
 	}
@@ -179,12 +183,12 @@ func TestMissingInit(t *testing.T) {
 		t.Errorf("Got wrong error: %v", err)
 	}
 
-	_, err = getHistory()
+	_, err = getHistory("")
 	if !reg.MatchString(err.Error()) {
 		t.Errorf("Got wrong error: %v", err)
 	}
 
-	err = pruneReports("", 3, false)
+	err = pruneReports("", "", 3, false)
 	if !reg.MatchString(err.Error()) {
 		t.Errorf("Got wrong error: %v", err)
 	}
@@ -240,7 +244,7 @@ func TestPrune(t *testing.T) {
 	//
 	// Run the prune
 	//
-	pruneReports("", 5, false)
+	pruneReports("", "", 5, false)
 
 	//
 	// Count them again
@@ -251,7 +255,24 @@ func TestPrune(t *testing.T) {
 	}
 
 	if new != 6 {
-		t.Errorf("We have %d reports, not 5", new)
+		t.Errorf("We have %d reports, not 6", new)
+	}
+
+	//
+	// Test pruning of specific environments by pruning all test envs
+	//
+	pruneReports("test", "", 0, false)
+
+	//
+	// Final count
+	//
+	fnl, err := countReports()
+
+	if err != nil {
+		t.Errorf("Error counting reports")
+	}
+	if fnl != 3 {
+		t.Errorf("We have %d production environment reports, not 3", fnl)
 	}
 
 	//
@@ -289,7 +310,7 @@ func TestPruneUnchanged(t *testing.T) {
 	//
 	// Run the prune
 	//
-	pruneUnchanged("", false)
+	pruneUnchanged("", "", false)
 
 	//
 	// Count them again
@@ -345,7 +366,7 @@ func TestIndex(t *testing.T) {
 	// We have three fake nodes now, two of which have the
 	// same hostname.
 	//
-	runs, err := getIndexNodes()
+	runs, err := getIndexNodes("")
 	if err != nil {
 		t.Errorf("getIndexNodes failed: %v", err)
 	}
@@ -386,7 +407,7 @@ func TestMissiongReport(t *testing.T) {
 
 	_, err := getYAML("", "")
 
-	reg, _ := regexp.Compile("Failed to find report with specified ID")
+	reg, _ := regexp.Compile("failed to find report with specified ID")
 	if !reg.MatchString(err.Error()) {
 		t.Errorf("Got wrong error: %v", err)
 	}
@@ -450,7 +471,7 @@ func TestHistory(t *testing.T) {
 	//
 	// We have three fake nodes now, two of which have the same hostname.
 	//
-	runs, err := getHistory()
+	runs, err := getHistory("")
 	if err != nil {
 		t.Errorf("getHistory failed: %v", err)
 	}

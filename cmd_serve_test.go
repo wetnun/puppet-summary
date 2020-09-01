@@ -47,7 +47,7 @@ func TestNonNumericReport(t *testing.T) {
 		}
 
 		// Check the response body is what we expect.
-		expected := "The report ID must be numeric\n"
+		expected := "the report ID must be numeric\n"
 		if rr.Body.String() != expected {
 			t.Errorf("handler returned unexpected body: got '%v' want '%v'",
 				rr.Body.String(), expected)
@@ -95,7 +95,7 @@ func TestUknownAPIState(t *testing.T) {
 		if status := resp.StatusCode; status != http.StatusInternalServerError {
 			t.Errorf("Unexpected status-code: %v", status)
 		}
-		if content != "Invalid state\n" {
+		if content != "invalid state supplied\n" {
 			t.Fatalf("Unexpected body: '%s'", body)
 		}
 	}
@@ -130,7 +130,7 @@ func TestReportView(t *testing.T) {
 	// The tests
 	//
 	tests := []TestCase{
-		{"text/html", "Report of execution against www.steve.org.uk, at 2017-07-29 23:17:01"},
+		{"text/html", "Report of execution against www.steve.org.uk in production, at 2017-07-29 23:17:01"},
 		{"application/json", "\"State\":\"unchanged\","},
 		{"application/xml", "<State>unchanged</State>"}}
 
@@ -371,7 +371,7 @@ func TestSearchMethod(t *testing.T) {
 	}
 
 	// Check the response body is what we expect.
-	expected := "Must be called via HTTP-POST\n"
+	expected := "must be called via HTTP-POST\n"
 	if rr.Body.String() != expected {
 		t.Errorf("handler returned unexpected body: got '%v' want '%v'",
 			rr.Body.String(), expected)
@@ -403,7 +403,7 @@ func TestSearchEmpty(t *testing.T) {
 	}
 
 	// Check the response body is what we expect.
-	expected := "Missing search term\n"
+	expected := "missing search term\n"
 	if rr.Body.String() != expected {
 		t.Errorf("handler returned unexpected body: got '%v' want '%v'",
 			rr.Body.String(), expected)
@@ -485,7 +485,7 @@ func TestUploadReportMethod(t *testing.T) {
 	}
 
 	// Check the response body is what we expect.
-	expected := "Must be called via HTTP-POST\n"
+	expected := "must be called via HTTP-POST\n"
 	if rr.Body.String() != expected {
 		t.Errorf("handler returned unexpected body: got '%v' want '%v'",
 			rr.Body.String(), expected)
@@ -603,7 +603,7 @@ func TestUploadBogusReport(t *testing.T) {
 	}
 
 	// Check the response body is what we expect.
-	expected := "Failed to get 'host' from YAML\n"
+	expected := "failed to get 'host' from YAML\n"
 	if rr.Body.String() != expected {
 		t.Errorf("handler returned unexpected body: got '%v' want '%v'",
 			rr.Body.String(), expected)
@@ -840,70 +840,76 @@ func TestIndexView(t *testing.T) {
 }
 
 //
-// Our icon is correct.
+// Test that static-resources work:
 //
-func TestFavIcon(t *testing.T) {
+//  1.  They produce content
+//  2.  They have sensible MIME-types
+//
+func TestStaticResources(t *testing.T) {
+
+	// Test-cases
+	type TestCase struct {
+		path string
+		mime string
+	}
+
+	tests := []TestCase{
+		TestCase{path: "/favicon.ico", mime: "image/vnd.microsoft.icon"},
+		TestCase{path: "/robots.txt", mime: "text/plain"},
+		TestCase{path: "/js/jquery.tablesorter.min.js", mime: "application/javascript"},
+		TestCase{path: "/css/bootstrap.min.css", mime: "text/css"},
+		TestCase{path: "/fonts/glyphicons-halflings-regular.woff2", mime: "font/woff2"},
+	}
 
 	// Wire up the router.
 	r := mux.NewRouter()
-	r.HandleFunc("/favicon.ico", IconHandler).Methods("GET")
+	r.NotFoundHandler = http.HandlerFunc(StaticHandler)
 
-	// Get the test-server
-	ts := httptest.NewServer(r)
-	defer ts.Close()
+	for _, test := range tests {
 
-	//
-	// Get the icon
-	//
-	url := ts.URL + "/favicon.ico"
+		// Get the test-server
+		ts := httptest.NewServer(r)
+		defer ts.Close()
 
-	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatal(err)
-	}
+		// Make a request
+		url := ts.URL + test.path
 
-	//
-	// Get the body
-	//
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+		resp, err := http.Get(url)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	if err != nil {
-		t.Errorf("Failed to read response-body %v\n", err)
-	}
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
 
-	//
-	// Test the size is that we expect.
-	//
-	if len(body) != 1150 {
-		t.Errorf("Icon was the wrong size %v\n", len(body))
-	}
+		if err != nil {
+			t.Errorf("Failed to read response-body %v\n", err)
+		}
 
-	//
-	// Test that the content-type was what we expect.
-	//
-	headers := resp.Header
-	ctype := headers["Content-Type"][0]
-	if ctype != "image/vnd.microsoft.icon" {
-		t.Errorf("content type header does not match: got %v", ctype)
-	}
+		if len(body) < 10 {
+			t.Errorf("too-short body reading %s: %d\n", test.path, len(body))
+		}
 
-	//
-	// Now test we were served the data we expect.
-	//
-	// Load the resource
-	//
-	tmpl, err := getResource("data/favicon.ico")
-	if err != nil {
-		t.Fatal(err)
-	}
+		//
+		// Test that the content-type was what we expect.
+		//
+		headers := resp.Header
+		ctype := headers["Content-Type"][0]
 
-	//
-	// Compare byte by byte
-	//
-	for _, b := range tmpl {
-		if body[b] != tmpl[b] {
-			t.Errorf("favicon.ico content is corrupt?")
+		// Content-type might have a character-set, so we can
+		// expect either of these:
+		//
+		//    Content-Type: text/plain
+		//    Content-Type: text/css; charset=utf-8
+		//
+		// Strip anything after the ";" to avoid caring about this
+		if strings.Contains(ctype, ";") {
+			pieces := strings.Split(ctype, ";")
+			ctype = pieces[0]
+		}
+
+		if ctype != test.mime {
+			t.Errorf("expected %s for %s - got %s", test.mime, test.path, ctype)
 		}
 	}
 }

@@ -38,9 +38,15 @@ This project is directly inspired by the [puppet-dashboard](https://github.com/s
 * The output can be used for scripting, and automation.
    * All output is available as [JSON/XML](API.md) in addition to human-viewable HTML.
 
-You can get a good idea of what the project does by looking at the online demo, which is available here:
+You can get a good idea of what the project does by looking at the screens:
 
-* [https://master.steve.org.uk/](https://master.steve.org.uk/)
+* [SCREENSHOTS.md](SCREENSHOTS.md)
+
+You can also consult the API documentation:
+
+* [API.md](API.md)
+
+
 
 
 ## Puppet Reporting
@@ -70,7 +76,7 @@ If you just need the binaries you can find them upon the [project release page](
 
 ### Source Installation go <=  1.11
 
-If you're using `go` before 1.11 then the following command should fetch/update `overseer`, and install it upon your system:
+If you're using `go` before 1.11 then the following command should fetch/update the project and install it upon your system:
 
      $ go get -u github.com/skx/puppet-summary
 

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/ioutil"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -54,7 +55,7 @@ func APIState(res http.ResponseWriter, req *http.Request) {
 
 	var (
 		status int
-		err	error
+		err    error
 	)
 	defer func() {
 		if nil != err {
@@ -73,7 +74,7 @@ func APIState(res http.ResponseWriter, req *http.Request) {
 	//
 	if len(state) < 1 {
 		status = http.StatusNotFound
-		err = errors.New("Missing 'state' parameter")
+		err = errors.New("missing 'state' parameter")
 		return
 	}
 
@@ -86,7 +87,7 @@ func APIState(res http.ResponseWriter, req *http.Request) {
 	case "failed":
 	case "orphaned":
 	default:
-		err = errors.New("Invalid state")
+		err = errors.New("invalid state supplied")
 		status = http.StatusInternalServerError
 		return
 	}
@@ -94,7 +95,7 @@ func APIState(res http.ResponseWriter, req *http.Request) {
 	//
 	// Get the nodes.
 	//
-	NodeList, err := getIndexNodes()
+	NodeList, err := getIndexNodes("")
 	if err != nil {
 		status = http.StatusInternalServerError
 		return
@@ -171,7 +172,7 @@ func RadiatorView(res http.ResponseWriter, req *http.Request) {
 
 	var (
 		status int
-		err	error
+		err    error
 	)
 	defer func() {
 		if nil != err {
@@ -181,14 +182,14 @@ func RadiatorView(res http.ResponseWriter, req *http.Request) {
 
 	// anonymous struct
 	type Pagedata struct {
-		States []PuppetState
+		States    []PuppetState
 		Urlprefix string
 	}
 
 	//
 	// Get the state of the nodes.
 	//
-	data, err := getStates()
+	data, err := getStates("")
 	if err != nil {
 		status = http.StatusInternalServerError
 		return
@@ -253,7 +254,7 @@ func RadiatorView(res http.ResponseWriter, req *http.Request) {
 		//
 		tmpl, err := getResource("data/radiator.template")
 		if err != nil {
-			fmt.Fprintf(res, err.Error())
+			fmt.Fprint(res, err.Error())
 			return
 		}
 
@@ -272,7 +273,7 @@ func RadiatorView(res http.ResponseWriter, req *http.Request) {
 		//
 		// If there were errors, then show them.
 		if err != nil {
-			fmt.Fprintf(res, err.Error())
+			fmt.Fprint(res, err.Error())
 			return
 		}
 
@@ -296,7 +297,7 @@ func RadiatorView(res http.ResponseWriter, req *http.Request) {
 func ReportSubmissionHandler(res http.ResponseWriter, req *http.Request) {
 	var (
 		status int
-		err	error
+		err    error
 	)
 	defer func() {
 		if nil != err {
@@ -313,7 +314,7 @@ func ReportSubmissionHandler(res http.ResponseWriter, req *http.Request) {
 	// Ensure this was a POST-request
 	//
 	if req.Method != "POST" {
-		err = errors.New("Must be called via HTTP-POST")
+		err = errors.New("must be called via HTTP-POST")
 		status = http.StatusInternalServerError
 		return
 	}
@@ -355,7 +356,7 @@ func ReportSubmissionHandler(res http.ResponseWriter, req *http.Request) {
 	//
 	// (Which is something you might do when testing the dashboard.)
 	//
-	path := filepath.Join(dir, fmt.Sprintf("%s", report.Hash))
+	path := filepath.Join(dir, report.Hash)
 
 	if Exists(path) {
 		fmt.Fprintf(res, "Ignoring duplicate submission")
@@ -374,7 +375,7 @@ func ReportSubmissionHandler(res http.ResponseWriter, req *http.Request) {
 	//
 	// Record that report in our SQLite database
 	//
-	relativePath := filepath.Join(report.Fqdn, fmt.Sprintf("%s", report.Hash))
+	relativePath := filepath.Join(report.Fqdn, report.Hash)
 
 	addDB(report, relativePath)
 
@@ -382,7 +383,7 @@ func ReportSubmissionHandler(res http.ResponseWriter, req *http.Request) {
 	// Show something to the caller.
 	//
 	out := fmt.Sprintf("{\"host\":\"%s\"}", report.Fqdn)
-	fmt.Fprintf(res, string(out))
+	fmt.Fprint(res, string(out))
 
 }
 
@@ -397,7 +398,7 @@ func ReportSubmissionHandler(res http.ResponseWriter, req *http.Request) {
 func SearchHandler(res http.ResponseWriter, req *http.Request) {
 	var (
 		status int
-		err	error
+		err    error
 	)
 	defer func() {
 		if nil != err {
@@ -414,7 +415,7 @@ func SearchHandler(res http.ResponseWriter, req *http.Request) {
 	// Ensure this was a POST-request
 	//
 	if req.Method != "POST" {
-		err = errors.New("Must be called via HTTP-POST")
+		err = errors.New("must be called via HTTP-POST")
 		status = http.StatusInternalServerError
 		return
 	}
@@ -429,7 +430,7 @@ func SearchHandler(res http.ResponseWriter, req *http.Request) {
 	// Ensure we have a term.
 	//
 	if len(term) < 1 {
-		err = errors.New("Missing search term")
+		err = errors.New("missing search term")
 		status = http.StatusInternalServerError
 		return
 	}
@@ -439,15 +440,15 @@ func SearchHandler(res http.ResponseWriter, req *http.Request) {
 	// with both the matching nodes, and the term used for the search
 	//
 	type Pagedata struct {
-		Nodes []PuppetRuns
-		Term  string
+		Nodes     []PuppetRuns
+		Term      string
 		Urlprefix string
 	}
 
 	//
 	// Get all known nodes.
 	//
-	NodeList, err := getIndexNodes()
+	NodeList, err := getIndexNodes("")
 	if err != nil {
 		status = http.StatusInternalServerError
 		return
@@ -474,7 +475,7 @@ func SearchHandler(res http.ResponseWriter, req *http.Request) {
 	//
 	tmpl, err := getResource("data/results.template")
 	if err != nil {
-		fmt.Fprintf(res, err.Error())
+		fmt.Fprint(res, err.Error())
 		return
 	}
 
@@ -493,7 +494,7 @@ func SearchHandler(res http.ResponseWriter, req *http.Request) {
 	//
 	// If there were errors, then show them.
 	if err != nil {
-		fmt.Fprintf(res, err.Error())
+		fmt.Fprint(res, err.Error())
 		return
 	}
 
@@ -514,7 +515,7 @@ func SearchHandler(res http.ResponseWriter, req *http.Request) {
 func ReportHandler(res http.ResponseWriter, req *http.Request) {
 	var (
 		status int
-		err	error
+		err    error
 	)
 	defer func() {
 		if nil != err {
@@ -538,7 +539,7 @@ func ReportHandler(res http.ResponseWriter, req *http.Request) {
 	//
 	if len(id) < 1 {
 		status = http.StatusNotFound
-		err = errors.New("Missing 'id' parameter")
+		err = errors.New("missing 'id' parameter")
 		return
 	}
 
@@ -548,7 +549,7 @@ func ReportHandler(res http.ResponseWriter, req *http.Request) {
 	reg, _ := regexp.Compile("^([0-9]+)$")
 	if !reg.MatchString(id) {
 		status = http.StatusInternalServerError
-		err = errors.New("The report ID must be numeric")
+		err = errors.New("the report ID must be numeric")
 		return
 	}
 
@@ -563,7 +564,7 @@ func ReportHandler(res http.ResponseWriter, req *http.Request) {
 
 	// need generic struct
 	type Pagedata struct {
-		Report PuppetReport
+		Report    PuppetReport
 		Urlprefix string
 	}
 
@@ -616,7 +617,7 @@ func ReportHandler(res http.ResponseWriter, req *http.Request) {
 		//
 		tmpl, err := getResource("data/report.template")
 		if err != nil {
-			fmt.Fprintf(res, err.Error())
+			fmt.Fprint(res, err.Error())
 			return
 		}
 
@@ -656,7 +657,7 @@ func ReportHandler(res http.ResponseWriter, req *http.Request) {
 		//
 		// If there were errors, then show them.
 		if err != nil {
-			fmt.Fprintf(res, err.Error())
+			fmt.Fprint(res, err.Error())
 			return
 		}
 
@@ -678,7 +679,7 @@ func ReportHandler(res http.ResponseWriter, req *http.Request) {
 func NodeHandler(res http.ResponseWriter, req *http.Request) {
 	var (
 		status int
-		err	error
+		err    error
 	)
 	defer func() {
 		if nil != err {
@@ -702,7 +703,7 @@ func NodeHandler(res http.ResponseWriter, req *http.Request) {
 	//
 	if len(fqdn) < 1 {
 		status = http.StatusNotFound
-		err = errors.New("Missing 'fqdn' parameter")
+		err = errors.New("missing 'fqdn' parameter")
 		return
 	}
 
@@ -732,8 +733,8 @@ func NodeHandler(res http.ResponseWriter, req *http.Request) {
 	// with both the reports and the fqdn of the host.
 	//
 	type Pagedata struct {
-		Fqdn  string
-		Nodes []PuppetReportSummary
+		Fqdn      string
+		Nodes     []PuppetReportSummary
 		Urlprefix string
 	}
 
@@ -781,7 +782,7 @@ func NodeHandler(res http.ResponseWriter, req *http.Request) {
 		//
 		tmpl, err := getResource("data/node.template")
 		if err != nil {
-			fmt.Fprintf(res, err.Error())
+			fmt.Fprint(res, err.Error())
 			return
 		}
 
@@ -812,7 +813,7 @@ func NodeHandler(res http.ResponseWriter, req *http.Request) {
 		//
 		// If there were errors, then show them.
 		if err != nil {
-			fmt.Fprintf(res, err.Error())
+			fmt.Fprint(res, err.Error())
 			return
 		}
 
@@ -823,76 +824,40 @@ func NodeHandler(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// StaticHandler is responsible for returning the contents of
+// all our embedded resources to HTTP-clients.
 //
-// IconHandler is the handler for the HTTP end-point
-//
-//	 GET /favicon.ico
-//
-// It will server an embedded binary resource.
-//
-func IconHandler(res http.ResponseWriter, req *http.Request) {
-	var (
-		status int
-		err	error
-	)
-	defer func() {
-		if nil != err {
-			http.Error(res, err.Error(), status)
-
-			// Don't spam stdout when running test-cases.
-			if flag.Lookup("test.v") == nil {
-				fmt.Printf("Error: %s\n", err.Error())
-			}
-		}
-	}()
+// It is configured as 404-handler, and can look for resources,
+// serving those that are present, and returning genuine 404
+// responses for requests that are entirely unknown.
+func StaticHandler(res http.ResponseWriter, req *http.Request) {
 
 	//
-	// Load the binary-asset.
+	// Get the path we're going to serve.
 	//
-	data, err := getResource("data/favicon.ico")
+	path := req.URL.Path
+
+	//
+	// Is this a static-resource we know about?
+	//
+	data, err := getResource("data" + path)
 	if err != nil {
-		fmt.Fprintf(res, err.Error())
+		res.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(res, "Error loading the resource you requested: %s : %s", path, err.Error())
 		return
 	}
 
-	res.Header().Set("Content-Type", "image/vnd.microsoft.icon")
-	res.Write(data)
-}
-
-//
-// SorterHandler is the handler for the HTTP end-point
-//
-//	 GET /jquery.tablesorter.min.js
-//
-// It will serve an embedded javascript resource.
-//
-func SorterHandler(res http.ResponseWriter, req *http.Request) {
-	var (
-		status int
-		err	error
-	)
-	defer func() {
-		if nil != err {
-			http.Error(res, err.Error(), status)
-
-			// Don't spam stdout when running test-cases.
-			if flag.Lookup("test.v") == nil {
-				fmt.Printf("Error: %s\n", err.Error())
-			}
-		}
-	}()
-
 	//
-	// Load the asset.
+	// OK at this point we're handling a valid static-resource,
+	// so we just need to get the content-type setup appropriately.
 	//
-	data, err := getResource("data/jquery.tablesorter.min.js")
-	if err != nil {
-		fmt.Fprintf(res, err.Error())
-		return
+	suffix := filepath.Ext(path)
+	mType := mime.TypeByExtension(suffix)
+	if mType != "" {
+		res.Header().Set("Content-Type", mType)
 	}
-
-	res.Header().Set("Content-Type", "application/javascript")
 	res.Write(data)
+
 }
 
 //
@@ -906,7 +871,7 @@ func SorterHandler(res http.ResponseWriter, req *http.Request) {
 func IndexHandler(res http.ResponseWriter, req *http.Request) {
 	var (
 		status int
-		err	error
+		err    error
 	)
 	defer func() {
 		if nil != err {
@@ -920,19 +885,27 @@ func IndexHandler(res http.ResponseWriter, req *http.Request) {
 	}()
 
 	//
+	// Check if we are filtering by environment
+	//
+	vars := mux.Vars(req)
+	environment := vars["environment"]
+
+	//
 	// Annoying struct to allow us to populate our template
 	// with both the nodes in the list, and the graph-data
 	//
 	type Pagedata struct {
-		Graph []PuppetHistory
-		Nodes []PuppetRuns
-		Urlprefix string
+		Graph        []PuppetHistory
+		Nodes        []PuppetRuns
+		Environment  string
+		Environments []string
+		Urlprefix    string
 	}
 
 	//
 	// Get the nodes to show on our front-page
 	//
-	NodeList, err := getIndexNodes()
+	NodeList, err := getIndexNodes(environment)
 	if err != nil {
 		status = http.StatusInternalServerError
 		return
@@ -941,11 +914,15 @@ func IndexHandler(res http.ResponseWriter, req *http.Request) {
 	//
 	// Get the graph-data
 	//
-	graphs, err := getHistory()
+	graphs, err := getHistory(environment)
 	if err != nil {
 		status = http.StatusInternalServerError
 		return
 	}
+
+	//
+	// Get all environments
+	environments, err := getEnvironments()
 
 	//
 	// Populate this structure.
@@ -953,6 +930,8 @@ func IndexHandler(res http.ResponseWriter, req *http.Request) {
 	var x Pagedata
 	x.Graph = graphs
 	x.Nodes = NodeList
+	x.Environment = environment
+	x.Environments = environments
 	x.Urlprefix = templateArgs.urlprefix
 
 	//
@@ -991,7 +970,7 @@ func IndexHandler(res http.ResponseWriter, req *http.Request) {
 		//
 		tmpl, err := getResource("data/index.template")
 		if err != nil {
-			fmt.Fprintf(res, err.Error())
+			fmt.Fprint(res, err.Error())
 			return
 		}
 
@@ -1010,7 +989,7 @@ func IndexHandler(res http.ResponseWriter, req *http.Request) {
 		//
 		// If there were errors, then show them.
 		if err != nil {
-			fmt.Fprintf(res, err.Error())
+			fmt.Fprint(res, err.Error())
 			return
 		}
 
@@ -1036,6 +1015,12 @@ func serve(settings serveCmd) {
 	// Create a new router and our route-mappings.
 	//
 	router := mux.NewRouter()
+
+	//
+	// Static-Files are handled via the 404-handler,
+	// as that is invoked when other routes don't match.
+	//
+	router.NotFoundHandler = http.HandlerFunc(StaticHandler)
 
 	//
 	// API end-points
@@ -1077,12 +1062,10 @@ func serve(settings serveCmd) {
 	// Handle a display of all known nodes, and their last state.
 	//
 	router.HandleFunc("/", IndexHandler).Methods("GET")
+	// also do it for environments
+	router.HandleFunc("/environment/{environment}/", IndexHandler).Methods("GET")
+	router.HandleFunc("/environment/{environment}", IndexHandler).Methods("GET")
 
-	//
-	// Static-Files
-	//
-	router.HandleFunc("/favicon.ico", IconHandler).Methods("GET")
-	router.HandleFunc("/jquery.tablesorter.min.js", SorterHandler).Methods("GET")
 	//
 	// Bind the router.
 	//
@@ -1104,8 +1087,8 @@ func serve(settings serveCmd) {
 	// a non-default http-server
 	//
 	srv := &http.Server{
-		Addr:		 bind,
-		Handler:	  loggedRouter,
+		Addr:         bind,
+		Handler:      loggedRouter,
 		ReadTimeout:  300 * time.Second,
 		WriteTimeout: 300 * time.Second,
 	}
@@ -1126,20 +1109,21 @@ type serveCmd struct {
 	autoPrune bool
 	bindHost  string
 	bindPort  int
-	dbFile	string
-	prefix	string
+	dbFile    string
+	prefix    string
 	urlprefix string
 }
 
 type templateOptions struct {
 	urlprefix string
 }
+
 var templateArgs templateOptions
 
 //
 // Glue
 //
-func (*serveCmd) Name() string	 { return "serve" }
+func (*serveCmd) Name() string     { return "serve" }
 func (*serveCmd) Synopsis() string { return "Launch the HTTP server." }
 func (*serveCmd) Usage() string {
 	return `serve [options]:
@@ -1171,6 +1155,11 @@ func (p *serveCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{})
 	SetupDB(p.dbFile)
 
 	//
+	// Check for entries with no environment
+	//
+	populateEnvironment(p.prefix)
+
+	//
 	// If autoprune
 	//
 	if p.autoPrune {
@@ -1185,7 +1174,7 @@ func (p *serveCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{})
 		//
 		c.AddFunc("@weekly", func() {
 			fmt.Printf("Automatically pruning old reports")
-			pruneReports(p.prefix, 7, false)
+			pruneReports("", p.prefix, 7, false)
 		})
 
 		//
